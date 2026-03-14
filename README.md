@@ -1,166 +1,197 @@
-# newsup-solar - Solar Power News Aggregator
+# Solar News 🌞
 
-A Python-based news aggregator focused on solar power and renewable energy news.
+> 全球太阳能行业新闻聚合器 - 一键获取中英文太阳能行业资讯
 
-## Features
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- **Multi-source crawling**: Collect news from various solar power news sources
-- **Content extraction**: Clean and structure news articles
-- **Topic classification**: Categorize articles by topic and relevance
-- **Sentiment analysis**: Analyze sentiment towards solar power developments
-- **Search & filtering**: Advanced search capabilities
-- **API access**: RESTful API for programmatic access
-- **Web dashboard**: Visual dashboard for news monitoring
+## ✨ 功能特性
 
-## Project Structure
+- 🌍 **多源聚合** - 同时支持中英文新闻源
+- 📰 **RSS + 动态渲染** - 自动降级，突破反爬虫
+- 🤖 **智能摘要** - 可选 LLM 智能摘要和分类
+- 📊 **工商业专项** - 专注工商业光伏领域
+- 🚀 **一键安装** - 快速部署，开箱即用
+
+## 📦 快速安装
+
+### 方式一：一键安装（推荐）
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ankrwu/newsup-solar/main/install.sh | bash
+```
+
+### 方式二：手动安装
+
+```bash
+# 克隆仓库
+git clone https://github.com/ankrwu/newsup-solar.git
+cd newsup-solar
+
+# 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 安装
+pip install -e .
+
+# 安装 Playwright 浏览器（可选，用于动态内容）
+playwright install chromium
+
+# 初始化数据库
+solarnews init
+```
+
+## 🚀 使用方法
+
+### 基本命令
+
+```bash
+# 爬取所有源（默认中英文）
+solarnews crawl
+
+# 只爬取中文源
+solarnews crawl --chinese
+
+# 只爬取英文源
+solarnews crawl --english
+
+# 启用智能摘要（需要 LLM API）
+solarnews crawl --smart
+
+# 工商业光伏专项模式
+solarnews crawl --commercial
+
+# 启动 API 服务
+solarnews serve
+
+# 查看统计
+solarnews stats
+
+# 查看帮助
+solarnews --help
+```
+
+### 命令行参数
+
+| 参数 | 说明 |
+|------|------|
+| `--chinese` | 只爬取中文源 |
+| `--english` | 只爬取英文源 |
+| `--commercial` | 工商业光伏专项模式 |
+| `--smart` | 启用智能摘要和分类 |
+| `--playwright` | 强制使用动态渲染 |
+
+## 📰 数据源
+
+### 英文源
+| 来源 | 方式 | 状态 |
+|------|------|------|
+| PV Magazine | RSS | ✅ |
+| Solar Power World | RSS | ✅ |
+
+### 中文源
+| 来源 | 方式 | 状态 |
+|------|------|------|
+| PV Magazine 中国 | RSS | ✅ |
+| 北极星光伏网 | Playwright | ✅ |
+
+## 🤖 智能功能
+
+### 智能摘要
+支持多种 LLM 后端：
+- OpenAI (GPT-3.5/4)
+- DeepSeek
+- 智谱 GLM
+
+```bash
+# 设置 API Key
+export OPENAI_API_KEY=your_key
+solarnews crawl --smart
+```
+
+### 智能分类
+自动分类内容类型：
+- 新闻资讯 (news)
+- 政策法规 (policy)
+- 市场分析 (market)
+- 技术创新 (technology)
+- 项目动态 (project)
+- 金融投资 (finance)
+
+## 📊 项目结构
 
 ```
 newsup-solar/
-├── src/                    # Source code
-│   ├── crawlers/          # News source crawlers
-│   ├── processors/        # Data processing modules
-│   ├── storage/           # Database and storage modules
-│   ├── api/               # API server
-│   └── utils/             # Utility functions
-├── config/                # Configuration files
-├── tests/                 # Test suite
-├── docs/                  # Documentation
-├── data/                  # Data storage (excluded from git)
-├── logs/                  # Log files (excluded from git)
-├── requirements.txt       # Python dependencies
-├── .env.example          # Example environment variables
-├── .gitignore            # Git ignore rules
-├── docker-compose.yml    # Docker orchestration
-└── Dockerfile            # Docker container definition
+├── solarnews/           # CLI 入口
+│   ├── cli.py          # 命令行工具
+│   └── __init__.py
+├── src/
+│   ├── crawlers/       # 爬虫模块
+│   │   ├── base.py     # 基础爬虫
+│   │   ├── dynamic_crawler.py  # Playwright 支持
+│   │   ├── pv_magazine.py
+│   │   ├── solar_power_world.py
+│   │   ├── chinese/    # 中文源
+│   │   └── commercial/ # 工商业专项
+│   ├── processors/     # 数据处理
+│   │   ├── smart_summarizer.py   # 智能摘要
+│   │   ├── smart_classifier.py   # 智能分类
+│   │   └── rss_parser.py         # RSS 解析
+│   ├── storage/        # 数据存储
+│   └── api/            # API 服务
+├── pyproject.toml      # 项目配置
+├── install.sh          # 一键安装脚本
+└── README.md
 ```
 
-## Getting Started
+## ⚙️ 配置
 
-### Prerequisites
+### 环境变量
 
-- Python 3.9+
-- PostgreSQL 13+ (or SQLite for development)
-- Redis (optional, for caching)
-
-### Installation
-
-1. Clone the repository:
 ```bash
-git clone git@github.com:ankrwu/newsup-solar.git
-cd newsup-solar
+# 数据库（默认 SQLite）
+DATABASE_URL=sqlite:///./data/news.db
+
+# LLM API（可选）
+OPENAI_API_KEY=your_key
+DEEPSEEK_API_KEY=your_key
+ZHIPU_API_KEY=your_key
 ```
 
-2. Create virtual environment:
+## 🔧 开发
+
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# 安装开发依赖
+pip install -e ".[dev]"
+
+# 运行测试
+pytest
+
+# 代码格式化
+black src/ solarnews/
+
+# 类型检查
+mypy src/
 ```
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+## 📝 更新日志
 
-4. Copy environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
+### v1.0.0 (2026-03)
+- ✅ 支持中英文新闻源
+- ✅ RSS + Playwright 自动降级
+- ✅ 智能摘要和分类
+- ✅ 工商业光伏专项模式
+- ✅ 一键安装脚本
 
-5. Initialize database:
-```bash
-python scripts/init_db.py
-```
+## 📄 许可证
 
-6. Run the crawler:
-```bash
-python src/main.py --crawl
-```
+MIT License
 
-7. Start the API server:
-```bash
-python src/api/server.py
-```
+## 🤝 贡献
 
-## Configuration
+欢迎提交 Issue 和 Pull Request！
 
-Edit `.env` file to configure:
+---
 
-- Database connection
-- News sources to crawl
-- Crawling frequency
-- API settings
-- Logging levels
-
-## Data Sources
-
-Planned news sources:
-- PV Magazine
-- Solar Power World
-- Renewable Energy World
-- CleanTechnica
-- Solar Industry Magazine
-- National Renewable Energy Laboratory (NREL) news
-- International Solar Energy Society (ISES) updates
-
-## Commercial & Industrial Solar Focus
-
-本项目专门提供了工商业光伏（C&I Solar）专项功能，专注于商业和工业光伏领域的新闻、政策和市场分析。
-
-### 工商业光伏专项功能
-- **专用爬虫**: PV Magazine Business, Solar Power World Commercial
-- **智能分析**: 商业模式识别、项目规模分类、地域分析
-- **关键词过滤**: 59个工商业光伏专项关键词
-- **分类系统**: 新闻/政策/市场三级分类
-
-### 快速开始（工商业光伏模式）
-```bash
-# 1. 安装依赖
-pip install -r requirements.txt
-
-# 2. 初始化数据库
-python scripts/init_db.py
-
-# 3. 运行工商业光伏爬虫
-python src/main.py --crawl --commercial --init-db
-```
-
-### 详细指南
-详见 [COMMERCIAL_GUIDE.md](COMMERCIAL_GUIDE.md) 获取完整使用说明和扩展指南。
-
-## Development
-
-### Running Tests
-```bash
-pytest tests/
-```
-
-### Code Style
-```bash
-black src/ tests/
-flake8 src/ tests/
-```
-
-### Building Documentation
-```bash
-cd docs && make html
-```
-
-## API Documentation
-
-Once running, visit `http://localhost:8000/docs` for interactive API documentation.
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please read CONTRIBUTING.md for guidelines.
-
-## Acknowledgments
-
-- Built with Python and FastAPI
-- Uses BeautifulSoup4 for HTML parsing
-- PostgreSQL for data persistence
-- Redis for caching (optional)
+**🌞 Solar News** - 让太阳能资讯触手可及
