@@ -1,10 +1,12 @@
 """
 北极星太阳能光伏网爬虫
-抓取 https://guangfu.bjx.com.cn/ 的新闻
+支持 RSS 和网页爬取两种方式
 """
 
 import re
 import logging
+import asyncio
+import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -15,7 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 class BjxGuangfuCrawler(BaseCrawler):
-    """北极星太阳能光伏网爬虫"""
+    """北极星太阳能光伏网爬虫 - 支持 RSS 和网页爬取"""
+    
+    # RSS 源配置
+    RSS_FEEDS = [
+        {
+            'url': 'https://guangfu.bjx.com.cn/rss.xml',
+            'description': '北极星光伏网 RSS'
+        },
+    ]
     
     @property
     def source_url(self) -> str:
@@ -25,38 +35,44 @@ class BjxGuangfuCrawler(BaseCrawler):
     def source_display_name(self) -> str:
         return "北极星光伏网"
     
-    @property
-    def list_urls(self) -> List[str]:
-        """新闻列表页URL"""
-        return [
-            f"{self.source_url}/news/",           # 行业资讯
-            f"{self.source_url}/zs/",             # 招中标
-            f"{self.source_url}/qy/",             # 企业新闻
-            f"{self.source_url}/zhengce/",        # 政策法规
-            f"{self.source_url}/hyyw/",           # 行业要闻
-        ]
-    
     async def fetch_article_urls(self) -> List[str]:
-        """获取文章URL列表"""
-        session = await self.get_session()
-        all_urls = []
+        """获取文章URL列表 - 优先使用 RSS"""
+        article_urls = []
         
-        for list_url in self.list_urls:
+        # 方法1: 尝试 RSS 订阅
+        try:
+            logger.info("Trying RSS feeds for 北极星光伏网...")
+            rss_urls = await self._fetch_from_rss()
+            if rss_urls:
+                logger.info(f"Found {len(rss_urls)} articles via RSS")
+                return rss_urls[:30]
+        except Exception as e:
+            logger.warning(f"RSS fetch failed: {e}, falling back to web scraping")
+        
+        # 方法2: 回退到网页爬取
+        logger.info("Falling back to web scraping...")
+        session = await self.get_session()
+        
+        list_urls = [
+            f"{self.source_url}/news/",
+            f"{self.source_url}/hyyw/",
+        ]
+        
+        for list_url in list_urls:
             try:
                 logger.info(f"Fetching articles from {list_url}")
+                await asyncio.sleep(1)
+                
                 async with session.get(list_url) as response:
                     if response.status == 200:
                         html = await response.text()
                         soup = BeautifulSoup(html, 'lxml')
                         
-                        # 北极星网站文章链接通常在列表中
-                        # 尝试多种选择器
                         link_selectors = [
                             '.list li a',
                             '.news-list a',
                             'ul.list a',
                             '.article-list a',
-                            'a[href*="/news/"]',
                             'a[href*=".shtml"]',
                         ]
                         
@@ -65,21 +81,60 @@ class BjxGuangfuCrawler(BaseCrawler):
                                 href = link.get('href', '')
                                 if href and self._is_article_url(href):
                                     full_url = href if href.startswith('http') else f"{self.source_url}{href}"
-                                    if full_url not in all_urls:
-                                        all_urls.append(full_url)
-                    
+                                    if full_url not in article_urls:
+                                        article_urls.append(full_url)
                     else:
                         logger.warning(f"Failed to fetch {list_url}: {response.status}")
             
             except Exception as e:
                 logger.error(f"Error fetching {list_url}: {e}")
         
-        logger.info(f"Found {len(all_urls)} articles from 北极星光伏网")
-        return list(set(all_urls))[:30]
+        logger.info(f"Found {len(article_urls)} articles from 北极星光伏网")
+        return list(set(article_urls))[:30]
+    
+    async def _fetch_from_rss(self) -> List[str]:
+        """从 RSS 源获取文章 URL"""
+        session = await self.get_session()
+        all_urls = []
+        
+        for feed_info in self.RSS_FEEDS:
+            try:
+                rss_url = feed_info['url']
+                logger.info(f"Fetching RSS from {rss_url}")
+                
+                async with session.get(rss_url) as response:
+                    if response.status == 200:
+                        content = await response.text()
+                        urls = self._parse_rss_xml(content)
+                        all_urls.extend(urls)
+                        logger.info(f"Found {len(urls)} articles from {feed_info['description']}")
+                    else:
+                        logger.warning(f"Failed to fetch RSS {rss_url}: {response.status}")
+            
+            except Exception as e:
+                logger.error(f"Error fetching RSS {feed_info['url']}: {e}")
+        
+        return list(set(all_urls))
+    
+    def _parse_rss_xml(self, xml_content: str) -> List[str]:
+        """解析 RSS XML 内容"""
+        urls = []
+        
+        try:
+            root = ET.fromstring(xml_content)
+            
+            for item in root.findall('.//item'):
+                link_elem = item.find('link')
+                if link_elem is not None and link_elem.text:
+                    urls.append(link_elem.text)
+        
+        except ET.ParseError as e:
+            logger.error(f"Error parsing RSS XML: {e}")
+        
+        return urls
     
     def _is_article_url(self, url: str) -> bool:
         """判断是否为文章URL"""
-        # 排除非文章链接
         excluded = [
             r'/list',
             r'/index',
@@ -87,13 +142,13 @@ class BjxGuangfuCrawler(BaseCrawler):
             r'#',
             r'\.pdf$',
             r'javascript:',
+            r'/rss',
         ]
         
         for pattern in excluded:
             if re.search(pattern, url, re.IGNORECASE):
                 return False
         
-        # 北极星文章URL通常是 .shtml 结尾或包含特定路径
         if re.search(r'\.shtml$', url):
             return True
         if re.search(r'/news/\d+', url):
@@ -114,28 +169,14 @@ class BjxGuangfuCrawler(BaseCrawler):
                 html = await response.text()
                 soup = BeautifulSoup(html, 'lxml')
                 
-                # 提取标题
                 title = self._extract_title(soup)
-                
-                # 提取内容
                 content = self._extract_content(soup)
-                
-                # 提取作者/来源
                 author = self._extract_author(soup)
-                
-                # 提取发布日期
                 publish_date = self._extract_date(soup)
-                
-                # 提取摘要
                 summary = self._extract_summary(soup)
-                
-                # 提取关键词
                 keywords = self._extract_keywords(soup)
-                
-                # 生成文章ID
                 article_id = self.generate_article_id(url)
                 
-                # 创建文章结构
                 article = self.create_article_structure(
                     article_id=article_id,
                     title=title,
@@ -150,7 +191,7 @@ class BjxGuangfuCrawler(BaseCrawler):
                     metadata={
                         'language': 'zh',
                         'source_country': 'China',
-                        'crawled_by': 'bjx_guangfu',
+                        'crawled_by': 'bjx_guangfu_rss',
                     }
                 )
                 
@@ -168,7 +209,6 @@ class BjxGuangfuCrawler(BaseCrawler):
             elem = soup.select_one(selector)
             if elem:
                 title = elem.get_text(strip=True)
-                # 清理标题中的网站名
                 title = re.sub(r'_北极星太阳能光伏网.*$', '', title)
                 title = re.sub(r'-北极星.*$', '', title)
                 return title
@@ -176,25 +216,17 @@ class BjxGuangfuCrawler(BaseCrawler):
     
     def _extract_content(self, soup: BeautifulSoup) -> str:
         """提取正文"""
-        selectors = [
-            '.article-content',
-            '.news-content',
-            '.content',
-            '#article',
-            'article',
-        ]
+        selectors = ['.article-content', '.news-content', '.content', '#article', 'article']
         
         for selector in selectors:
             elem = soup.select_one(selector)
             if elem:
                 paragraphs = elem.find_all('p')
                 content = ' '.join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
-                # 清理内容
                 content = re.sub(r'责任编辑.*$', '', content)
                 content = re.sub(r'版权声明.*$', '', content, flags=re.IGNORECASE)
                 if len(content) > 50:
                     return content
-        
         return ""
     
     def _extract_author(self, soup: BeautifulSoup) -> str:
@@ -204,7 +236,6 @@ class BjxGuangfuCrawler(BaseCrawler):
             elem = soup.select_one(selector)
             if elem:
                 text = elem.get_text(strip=True)
-                # 提取来源信息
                 match = re.search(r'来源[：:]\s*(\S+)', text)
                 if match:
                     return match.group(1)
@@ -213,10 +244,7 @@ class BjxGuangfuCrawler(BaseCrawler):
     
     def _extract_date(self, soup: BeautifulSoup) -> str:
         """提取日期"""
-        # 尝试多种日期格式
         text = soup.get_text()
-        
-        # 匹配常见日期格式
         patterns = [
             r'(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)',
             r'发布时间[：:]\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})',
@@ -227,7 +255,6 @@ class BjxGuangfuCrawler(BaseCrawler):
             match = re.search(pattern, text)
             if match:
                 return match.group(1)
-        
         return ""
     
     def _extract_summary(self, soup: BeautifulSoup) -> str:
@@ -240,9 +267,7 @@ class BjxGuangfuCrawler(BaseCrawler):
     def _extract_keywords(self, soup: BeautifulSoup) -> List[str]:
         """提取关键词"""
         keywords = []
-        
         meta = soup.find('meta', attrs={'name': 'keywords'})
         if meta and meta.get('content'):
             keywords = [k.strip() for k in meta['content'].split(',')]
-        
         return keywords[:10]
