@@ -48,7 +48,7 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
         return "北极星光伏网"
     
     async def fetch_article_urls(self) -> List[str]:
-        """获取文章URL列表 - 优先级: RSS > 动态渲染 > 静态爬取"""
+        """获取文章URL列表 - 优先级: RSS > 静态爬取 > Playwright降级"""
         article_urls = []
         
         # 方法1: 尝试 RSS 订阅
@@ -61,19 +61,8 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
         except Exception as e:
             logger.warning(f"RSS fetch failed: {e}, trying next method")
         
-        # 方法2: 尝试 Playwright 动态渲染
-        if self.use_playwright and self.is_available:
-            try:
-                logger.info("Trying Playwright for dynamic content...")
-                dynamic_urls = await self._fetch_with_playwright()
-                if dynamic_urls:
-                    logger.info(f"Found {len(dynamic_urls)} articles via Playwright")
-                    return dynamic_urls[:30]
-            except Exception as e:
-                logger.warning(f"Playwright fetch failed: {e}, falling back to static")
-        
-        # 方法3: 静态网页爬取
-        logger.info("Falling back to static web scraping...")
+        # 方法2: 静态网页爬取（先尝试，因为更快）
+        logger.info("Trying static web scraping...")
         session = await self.get_session()
         
         list_urls = [
@@ -112,7 +101,25 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
             except Exception as e:
                 logger.error(f"Error fetching {list_url}: {e}")
         
-        logger.info(f"Found {len(article_urls)} articles from 北极星光伏网")
+        # 如果静态爬取成功获取到文章，直接返回
+        if article_urls:
+            logger.info(f"Found {len(article_urls)} articles via static scraping")
+            return list(set(article_urls))[:30]
+        
+        # 方法3: 静态爬取失败，自动降级到 Playwright
+        if PLAYWRIGHT_AVAILABLE:
+            logger.info("Static scraping found no articles, auto-enabling Playwright fallback...")
+            try:
+                dynamic_urls = await self._fetch_with_playwright()
+                if dynamic_urls:
+                    logger.info(f"Found {len(dynamic_urls)} articles via Playwright fallback")
+                    return dynamic_urls[:30]
+            except Exception as e:
+                logger.error(f"Playwright fallback failed: {e}")
+        else:
+            logger.warning("Playwright not available for fallback")
+        
+        logger.info(f"Total articles found from 北极星光伏网: {len(article_urls)}")
         return list(set(article_urls))[:30]
     
     async def _fetch_from_rss(self) -> List[str]:
