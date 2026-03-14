@@ -36,28 +36,52 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_crawlers(commercial_mode: bool = False, chinese_mode: bool = False, 
-                 use_playwright: bool = False) -> List[BaseCrawler]:
-    """Initialize and return configured crawlers."""
+def get_crawlers(commercial_mode: bool = False, chinese_only: bool = False, 
+                 english_only: bool = False, use_playwright: bool = False) -> List[BaseCrawler]:
+    """
+    Initialize and return configured crawlers.
+    
+    Args:
+        commercial_mode: 只爬取工商业光伏新闻
+        chinese_only: 只爬取中文源
+        english_only: 只爬取英文源
+        use_playwright: 启用 Playwright 动态渲染
+    
+    默认情况下（不指定任何参数）会同时爬取中英文源
+    """
     crawlers = []
     
-    if chinese_mode:
-        logger.info("Using Chinese solar crawlers")
-        crawlers = [
-            PVMagazineChinaCrawler(),
-            BjxGuangfuCrawler(use_playwright=use_playwright),
-        ]
-    elif commercial_mode:
+    # 商业模式：只爬取工商业相关
+    if commercial_mode:
         logger.info("Using commercial solar crawlers")
         crawlers = [
             PVMagazineBusinessCrawler(),
             SolarPowerWorldCommercialCrawler(),
         ]
-    else:
-        logger.info("Using general solar crawlers")
+    # 只爬取中文源
+    elif chinese_only:
+        logger.info("Using Chinese solar crawlers only")
         crawlers = [
-            PVMagazineCrawler(),
-            SolarPowerWorldCrawler(),
+            PVMagazineChinaCrawler(),
+            BjxGuangfuCrawler(use_playwright=use_playwright),
+        ]
+    # 只爬取英文源
+    elif english_only:
+        logger.info("Using English solar crawlers only")
+        crawlers = [
+            PVMagazineCrawler(use_playwright=use_playwright),
+            SolarPowerWorldCrawler(use_playwright=use_playwright),
+        ]
+    # 默认：同时爬取中英文源
+    else:
+        logger.info("Using all solar crawlers (Chinese + English)")
+        crawlers = [
+            # 英文源
+            PVMagazineCrawler(use_playwright=use_playwright),
+            SolarPowerWorldCrawler(use_playwright=use_playwright),
+            # 中文源
+            PVMagazineChinaCrawler(),
+            BjxGuangfuCrawler(use_playwright=use_playwright),
         ]
     
     if use_playwright:
@@ -84,7 +108,7 @@ async def crawl_news(crawlers: List[BaseCrawler], db_manager: DatabaseManager):
 
 
 async def process_articles(articles: List[dict], db_manager: DatabaseManager, 
-                          commercial_mode: bool = False, use_smart_processing: bool = True):
+                          commercial_mode: bool = False, use_smart_processing: bool = False):
     """Process and store crawled articles."""
     if not articles:
         logger.info("No articles to process")
@@ -181,9 +205,14 @@ async def main():
         help="Use Chinese news sources (PV Magazine China, 北极星光伏网等)"
     )
     parser.add_argument(
-        "--no-smart",
+        "--smart",
         action="store_true",
-        help="Disable smart processing (LLM summaries, AI classification)"
+        help="Enable smart processing (LLM summaries, AI classification)"
+    )
+    parser.add_argument(
+        "--english",
+        action="store_true",
+        help="Use English news sources only"
     )
     parser.add_argument(
         "--playwright",
@@ -211,12 +240,13 @@ async def main():
     if args.crawl:
         # Determine mode
         commercial_mode = args.commercial
-        chinese_mode = args.chinese
-        use_smart = not args.no_smart
+        chinese_only = args.chinese
+        english_only = args.english
+        use_smart = args.smart
         use_playwright = args.playwright
         
         # Get crawlers based on mode
-        crawlers = get_crawlers(commercial_mode, chinese_mode, use_playwright)
+        crawlers = get_crawlers(commercial_mode, chinese_only, english_only, use_playwright)
         
         # 如果指定了特定源，过滤爬虫
         if args.source != "all":
