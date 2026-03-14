@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Main entry point for newsup-solar news aggregator.
-支持普通模式和工商业光伏专项模式。
+支持普通模式、工商业光伏专项模式和中文源模式。
 """
 
 import asyncio
@@ -16,10 +16,14 @@ from src.crawlers.pv_magazine import PVMagazineCrawler
 from src.crawlers.solar_power_world import SolarPowerWorldCrawler
 from src.crawlers.commercial.pv_magazine_business import PVMagazineBusinessCrawler
 from src.crawlers.commercial.solar_power_world_commercial import SolarPowerWorldCommercialCrawler
+from src.crawlers.chinese.pv_magazine_china import PVMagazineChinaCrawler
+from src.crawlers.chinese.bjx_guangfu import BjxGuangfuCrawler
 from src.storage.database import DatabaseManager
 from src.processors.cleaner import ArticleCleaner
 from src.processors.commercial_cleaner import CommercialSolarCleaner
 from src.processors.classifier import ArticleClassifier
+from src.processors.smart_summarizer import SmartSummarizer
+from src.processors.smart_classifier import SmartClassifier, classify_article
 
 # Load environment variables
 load_dotenv()
@@ -32,22 +36,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_crawlers(commercial_mode: bool = False) -> List[BaseCrawler]:
+def get_crawlers(commercial_mode: bool = False, chinese_mode: bool = False) -> List[BaseCrawler]:
     """Initialize and return configured crawlers."""
-    if commercial_mode:
+    crawlers = []
+    
+    if chinese_mode:
+        logger.info("Using Chinese solar crawlers")
+        crawlers = [
+            PVMagazineChinaCrawler(),
+            BjxGuangfuCrawler(),
+        ]
+    elif commercial_mode:
         logger.info("Using commercial solar crawlers")
-        return [
+        crawlers = [
             PVMagazineBusinessCrawler(),
             SolarPowerWorldCommercialCrawler(),
-            # 可以添加更多商业爬虫
         ]
     else:
         logger.info("Using general solar crawlers")
-        return [
+        crawlers = [
             PVMagazineCrawler(),
             SolarPowerWorldCrawler(),
-            # Add more crawlers here
         ]
+    
+    return crawlers
 
 
 async def crawl_news(crawlers: List[BaseCrawler], db_manager: DatabaseManager):
@@ -67,7 +79,8 @@ async def crawl_news(crawlers: List[BaseCrawler], db_manager: DatabaseManager):
     return all_articles
 
 
-async def process_articles(articles: List[dict], db_manager: DatabaseManager, commercial_mode: bool = False):
+async def process_articles(articles: List[dict], db_manager: DatabaseManager, 
+                          commercial_mode: bool = False, use_smart_processing: bool = True):
     """Process and store crawled articles."""
     if not articles:
         logger.info("No articles to process")
@@ -85,14 +98,34 @@ async def process_articles(articles: List[dict], db_manager: DatabaseManager, co
     
     classifier = ArticleClassifier()
     
+    # Initialize smart processors
+    summarizer = SmartSummarizer(prefer_llm=True) if use_smart_processing else None
+    smart_classifier = SmartClassifier() if use_smart_processing else None
+    
     processed_count = 0
     for article in articles:
         try:
             # Clean article content
             cleaned = cleaner.clean(article)
             
-            # Classify article
+            # Generate smart summary if enabled
+            if summarizer and use_smart_processing:
+                original_content = cleaned.get('content', '')
+                if len(original_content) > 200:
+                    smart_summary = summarizer.summarize(original_content, max_length=200)
+                    if 'metadata' not in cleaned:
+                        cleaned['metadata'] = {}
+                    cleaned['metadata']['smart_summary'] = smart_summary
+                    # 如果原文没有摘要，使用智能摘要
+                    if not cleaned.get('summary'):
+                        cleaned['summary'] = smart_summary
+            
+            # Classify article (traditional)
             classified = classifier.classify(cleaned)
+            
+            # Smart classification if enabled
+            if smart_classifier and use_smart_processing:
+                classified = classify_article(classified)
             
             # Store in database
             await db_manager.save_article(classified)
@@ -139,10 +172,20 @@ async def main():
         help="Use commercial solar mode (focus on commercial/industrial solar)"
     )
     parser.add_argument(
+        "--chinese",
+        action="store_true",
+        help="Use Chinese news sources (PV Magazine China, 北极星光伏网等)"
+    )
+    parser.add_argument(
+        "--no-smart",
+        action="store_true",
+        help="Disable smart processing (LLM summaries, AI classification)"
+    )
+    parser.add_argument(
         "--source",
         type=str,
         default="all",
-        help="Specific source to crawl: pv_magazine, solar_power_world, commercial, or all"
+        help="Specific source to crawl: pv_magazine, solar_power_world, commercial, chinese, or all"
     )
     
     args = parser.parse_args()
@@ -157,9 +200,13 @@ async def main():
         return
     
     if args.crawl:
-        # Get crawlers based on mode
+        # Determine mode
         commercial_mode = args.commercial
-        crawlers = get_crawlers(commercial_mode)
+        chinese_mode = args.chinese
+        use_smart = not args.no_smart
+        
+        # Get crawlers based on mode
+        crawlers = get_crawlers(commercial_mode, chinese_mode)
         
         # 如果指定了特定源，过滤爬虫
         if args.source != "all":
@@ -168,6 +215,9 @@ async def main():
                 'pv_magazine': ['PVMagazineCrawler', 'PVMagazineBusinessCrawler'],
                 'solar_power_world': ['SolarPowerWorldCrawler', 'SolarPowerWorldCommercialCrawler'],
                 'commercial': ['PVMagazineBusinessCrawler', 'SolarPowerWorldCommercialCrawler'],
+                'chinese': ['PVMagazineChinaCrawler', 'BjxGuangfuCrawler'],
+                'pv_magazine_china': ['PVMagazineChinaCrawler'],
+                'bjx': ['BjxGuangfuCrawler'],
             }
             
             target_classes = source_map.get(args.source.lower(), [])
@@ -185,19 +235,15 @@ async def main():
         articles = await crawl_news(crawlers, db_manager)
         
         # Process articles
-        await process_articles(articles, db_manager, commercial_mode)
+        await process_articles(articles, db_manager, commercial_mode, use_smart)
         
         logger.info("Crawling completed")
     
     elif args.process:
-        # TODO: Implement processing of existing articles
         logger.info("Processing existing articles...")
-        # This would involve fetching unprocessed articles from DB
-        # and running them through the processing pipeline
         pass
     
     elif args.serve:
-        # Start API server
         from src.api.server import start_server
         await start_server()
     
