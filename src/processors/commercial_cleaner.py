@@ -65,12 +65,11 @@ class CommercialSolarCleaner(ArticleCleaner):
         # 提取商业相关信息
         cleaned = self._extract_business_info(cleaned)
         
-        # 计算工商业光伏相关度（覆盖父类方法）
-        cleaned['commercial_relevance_score'] = self._calculate_commercial_relevance(cleaned)
-        
-        # 添加处理元数据
+        # 计算工商业光伏相关度，存储在metadata中
+        commercial_score = self._calculate_commercial_relevance(cleaned)
         if 'metadata' not in cleaned:
             cleaned['metadata'] = {}
+        cleaned['metadata']['commercial_relevance_score'] = commercial_score
         cleaned['metadata']['commercial_processed'] = True
         cleaned['metadata']['commercial_processing_date'] = self._get_timestamp()
         
@@ -128,19 +127,20 @@ class CommercialSolarCleaner(ArticleCleaner):
         # 提取地域信息
         analysis['regions'] = extract_regions(text_for_analysis)
         
-        # 添加到文章元数据
-        if 'commercial_analysis' not in article:
-            article['commercial_analysis'] = {}
-        article['commercial_analysis'].update(analysis)
+        # 添加到文章 metadata 字段
+        if 'metadata' not in article:
+            article['metadata'] = {}
+        article['metadata']['commercial_analysis'] = analysis
         
         return article
     
     def _add_commercial_classification(self, article: Dict[str, Any]) -> Dict[str, Any]:
         """添加工商业光伏分类标签"""
-        if 'commercial_analysis' not in article:
+        # 从 metadata 中获取 commercial_analysis
+        analysis = article.get('metadata', {}).get('commercial_analysis', {})
+        if not analysis:
             return article
         
-        analysis = article['commercial_analysis']
         tags = []
         
         # 添加基础标签
@@ -171,11 +171,14 @@ class CommercialSolarCleaner(ArticleCleaner):
         if analysis['project_scale'] != 'unknown':
             tags.append(f"scale_{analysis['project_scale']}")
         
-        # 添加到文章
-        if 'tags' not in article:
-            article['tags'] = []
-        article['tags'].extend(tags)
-        article['tags'] = list(set(article['tags']))  # 去重
+        # 添加到文章 metadata 字段
+        if 'metadata' not in article:
+            article['metadata'] = {}
+        
+        # 合并现有 tags
+        existing_tags = article['metadata'].get('tags', [])
+        all_tags = list(set(existing_tags + tags))
+        article['metadata']['tags'] = all_tags
         
         return article
     
@@ -197,21 +200,23 @@ class CommercialSolarCleaner(ArticleCleaner):
         # 提取数字信息（规模、投资额等）
         numbers_info = self._extract_numbers_info(text)
         
-        # 添加到文章元数据
-        if 'commercial_analysis' not in article:
-            article['commercial_analysis'] = {}
+        # 添加到文章 metadata 字段
+        if 'metadata' not in article:
+            article['metadata'] = {}
+        if 'commercial_analysis' not in article['metadata']:
+            article['metadata']['commercial_analysis'] = {}
         
-        article['commercial_analysis']['companies_mentioned'] = list(set(companies))
-        article['commercial_analysis']['numbers_info'] = numbers_info
+        article['metadata']['commercial_analysis']['companies_mentioned'] = list(set(companies))
+        article['metadata']['commercial_analysis']['numbers_info'] = numbers_info
         
         return article
     
     def _calculate_commercial_relevance(self, article: Dict[str, Any]) -> float:
         """计算工商业光伏相关度"""
-        if 'commercial_analysis' not in article:
+        # 从 metadata 中获取 commercial_analysis
+        analysis = article.get('metadata', {}).get('commercial_analysis', {})
+        if not analysis:
             return 0.0
-        
-        analysis = article['commercial_analysis']
         
         # 基础分数
         score = 0.0

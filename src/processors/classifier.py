@@ -48,22 +48,23 @@ class ArticleClassifier:
         """对文章进行分类"""
         classified = article.copy()
         
-        # 基础内容类型分类
-        content_classification = self._classify_content_type(classified)
-        classified.update(content_classification)
-        
-        # 技术分类
-        tech_classification = self._classify_technology(classified)
-        classified.update(tech_classification)
-        
-        # 金融分类
-        finance_classification = self._classify_finance(classified)
-        classified.update(finance_classification)
-        
-        # 添加分类元数据
+        # 确保metadata存在
         if 'metadata' not in classified:
             classified['metadata'] = {}
         
+        # 基础内容类型分类
+        content_classification = self._classify_content_type(classified)
+        classified['metadata'].update(content_classification)
+        
+        # 技术分类
+        tech_classification = self._classify_technology(classified)
+        classified['metadata'].update(tech_classification)
+        
+        # 金融分类
+        finance_classification = self._classify_finance(classified)
+        classified['metadata'].update(finance_classification)
+        
+        # 添加分类元数据
         classified['metadata']['classified'] = True
         classified['metadata']['classification_timestamp'] = self._get_timestamp()
         

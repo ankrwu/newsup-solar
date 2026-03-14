@@ -6,6 +6,7 @@ import os
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from dateutil import parser as date_parser
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Float, Boolean, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -132,23 +133,26 @@ class DatabaseManager:
         
         session = self.Session()
         try:
+            # 过滤和转换数据
+            filtered_data = self._prepare_article_data(article_data)
+            
             # Check if article already exists
             existing = session.query(Article).filter_by(
-                article_id=article_data.get('article_id')
+                article_id=filtered_data.get('article_id')
             ).first()
             
             if existing:
                 # Update existing article
-                for key, value in article_data.items():
+                for key, value in filtered_data.items():
                     if hasattr(existing, key) and key not in ['article_id', 'created_at']:
                         setattr(existing, key, value)
                 existing.updated_at = datetime.utcnow()
-                logger.debug(f"Updated article: {article_data.get('title')}")
+                logger.debug(f"Updated article: {filtered_data.get('title')}")
             else:
                 # Create new article
-                article = Article(**article_data)
+                article = Article(**filtered_data)
                 session.add(article)
-                logger.debug(f"Added new article: {article_data.get('title')}")
+                logger.debug(f"Added new article: {filtered_data.get('title')}")
             
             session.commit()
             return True
@@ -159,6 +163,52 @@ class DatabaseManager:
             return False
         finally:
             session.close()
+    
+    def _prepare_article_data(self, article_data: Dict[str, Any]) -> Dict[str, Any]:
+        """准备文章数据，过滤无效字段并转换类型"""
+        # Article模型的有效字段
+        valid_fields = [
+            'article_id', 'title', 'url', 'source', 'source_url',
+            'content', 'summary', 'author', 'publish_date', 'crawl_date',
+            'keywords', 'categories', 'sentiment_score', 'relevance_score',
+            'processed', 'processing_date', 'raw_html', 'article_metadata'
+        ]
+        
+        filtered_data = {}
+        for key, value in article_data.items():
+            if key in valid_fields:
+                # 处理 metadata 字段名映射
+                if key == 'metadata':
+                    filtered_data['article_metadata'] = value
+                else:
+                    filtered_data[key] = value
+        
+        # 处理 metadata（如果还没处理）
+        if 'metadata' in article_data and 'article_metadata' not in filtered_data:
+            filtered_data['article_metadata'] = article_data['metadata']
+        
+        # 转换日期字段
+        for date_field in ['publish_date', 'crawl_date', 'processing_date']:
+            if date_field in filtered_data:
+                value = filtered_data[date_field]
+                if isinstance(value, str) and value:
+                    try:
+                        filtered_data[date_field] = date_parser.parse(value)
+                    except (ValueError, TypeError):
+                        filtered_data[date_field] = None
+                elif not isinstance(value, datetime):
+                    filtered_data[date_field] = None
+        
+        # 确保 keywords 和 categories 是列表
+        for list_field in ['keywords', 'categories']:
+            if list_field in filtered_data:
+                value = filtered_data[list_field]
+                if value is None:
+                    filtered_data[list_field] = []
+                elif not isinstance(value, list):
+                    filtered_data[list_field] = list(value) if value else []
+        
+        return filtered_data
     
     async def get_article(self, article_id: str) -> Optional[Dict[str, Any]]:
         """Get an article by ID."""

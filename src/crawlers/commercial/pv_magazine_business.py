@@ -26,60 +26,66 @@ class PVMagazineBusinessCrawler(BaseCrawler):
         return "PV Magazine Business"
     
     @property
-    def business_category_url(self) -> str:
-        """商业板块URL"""
-        return f"{self.source_url}/category/business/"
+    def business_category_urls(self) -> List[str]:
+        """商业板块URL列表（finance和markets分类）"""
+        return [
+            f"{self.source_url}/category/finance/",
+            f"{self.source_url}/category/markets/",
+        ]
     
     async def fetch_article_urls(self) -> List[str]:
-        """从PV Magazine商业板块获取文章URL"""
+        """从PV Magazine商业板块获取文章URL（支持多个分类）"""
         session = await self.get_session()
-        urls = []
+        all_urls = []
         
-        try:
-            # 访问商业板块
-            logger.info(f"Fetching articles from {self.business_category_url}")
-            async with session.get(self.business_category_url) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    soup = BeautifulSoup(html, 'lxml')
-                    
-                    # 查找文章链接
-                    # PV Magazine 的文章通常有这样的结构
-                    article_selectors = [
-                        'article a[href*="/news/"]',
-                        'article a[href*="/business/"]',
-                        '.post-title a',
-                        '.entry-title a',
-                        'h2 a',
-                        'a[href*="/202"]',  # 包含日期的链接
-                    ]
-                    
-                    for selector in article_selectors:
-                        for link in soup.select(selector):
-                            href = link.get('href', '')
-                            if href and self._is_business_article(href):
-                                full_url = href if href.startswith('http') else f"{self.source_url}{href}"
-                                if full_url not in urls:
-                                    urls.append(full_url)
-                    
-                    logger.info(f"Found {len(urls)} potential business articles from PV Magazine")
-                    
-                    # 也检查分页
-                    urls.extend(await self._fetch_pagination_urls(soup))
-                    
-                    # 去重并返回前20个
-                    urls = list(set(urls))
-                    return urls[:20]
-                    
-                else:
-                    logger.error(f"Failed to fetch {self.business_category_url}: {response.status}")
-                    return []
-                    
-        except Exception as e:
-            logger.error(f"Error fetching PV Magazine Business URLs: {e}")
-            return []
+        for category_url in self.business_category_urls:
+            try:
+                logger.info(f"Fetching articles from {category_url}")
+                async with session.get(category_url) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        soup = BeautifulSoup(html, 'lxml')
+                        
+                        # 查找文章链接
+                        article_selectors = [
+                            'article a[href*="/news/"]',
+                            'article a[href*="/business/"]',
+                            '.post-title a',
+                            '.entry-title a',
+                            'h2 a',
+                            'a[href*="/202"]',  # 包含日期的链接
+                        ]
+                        
+                        urls = []
+                        for selector in article_selectors:
+                            for link in soup.select(selector):
+                                href = link.get('href', '')
+                                if href and self._is_business_article(href):
+                                    full_url = href if href.startswith('http') else f"{self.source_url}{href}"
+                                    if full_url not in urls:
+                                        urls.append(full_url)
+                        
+                        logger.info(f"Found {len(urls)} potential business articles from {category_url}")
+                        
+                        # 也检查分页
+                        pagination_urls = await self._fetch_pagination_urls(soup, category_url)
+                        urls.extend(pagination_urls)
+                        
+                        # 添加到总列表
+                        all_urls.extend(urls)
+                        
+                    else:
+                        logger.warning(f"Failed to fetch {category_url}: {response.status}")
+                        
+            except Exception as e:
+                logger.error(f"Error fetching PV Magazine Business URLs from {category_url}: {e}")
+        
+        # 去重并返回前20个
+        all_urls = list(set(all_urls))
+        logger.info(f"Total unique articles found: {len(all_urls)}")
+        return all_urls[:20]
     
-    async def _fetch_pagination_urls(self, soup: BeautifulSoup) -> List[str]:
+    async def _fetch_pagination_urls(self, soup: BeautifulSoup, category_url: str) -> List[str]:
         """获取分页链接"""
         pagination_urls = []
         
@@ -88,7 +94,7 @@ class PVMagazineBusinessCrawler(BaseCrawler):
             pagination_links = soup.select('.pagination a, .page-numbers a')
             for link in pagination_links:
                 href = link.get('href', '')
-                if href and 'page' in href.lower() and self.business_category_url in href:
+                if href and 'page' in href.lower() and category_url in href:
                     if href not in pagination_urls:
                         pagination_urls.append(href)
             
