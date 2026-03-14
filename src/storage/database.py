@@ -56,7 +56,7 @@ class Article(Base):
     
     # Raw data for debugging
     raw_html = Column(Text)
-    metadata = Column(JSON, default=dict)
+    article_metadata = Column('metadata', JSON, default=dict)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -81,6 +81,8 @@ class Article(Base):
             'relevance_score': self.relevance_score,
             'processed': self.processed,
             'processing_date': self.processing_date.isoformat() if self.processing_date else None,
+            'metadata': self.article_metadata,
+            'raw_html': self.raw_html,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

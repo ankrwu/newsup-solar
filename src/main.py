@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Main entry point for newsup-solar news aggregator.
+支持普通模式和工商业光伏专项模式。
 """
 
 import asyncio
@@ -13,8 +14,11 @@ from dotenv import load_dotenv
 from src.crawlers.base import BaseCrawler
 from src.crawlers.pv_magazine import PVMagazineCrawler
 from src.crawlers.solar_power_world import SolarPowerWorldCrawler
+from src.crawlers.commercial.pv_magazine_business import PVMagazineBusinessCrawler
+from src.crawlers.commercial.solar_power_world_commercial import SolarPowerWorldCommercialCrawler
 from src.storage.database import DatabaseManager
 from src.processors.cleaner import ArticleCleaner
+from src.processors.commercial_cleaner import CommercialSolarCleaner
 from src.processors.classifier import ArticleClassifier
 
 # Load environment variables
@@ -28,13 +32,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_crawlers() -> List[BaseCrawler]:
+def get_crawlers(commercial_mode: bool = False) -> List[BaseCrawler]:
     """Initialize and return configured crawlers."""
-    return [
-        PVMagazineCrawler(),
-        SolarPowerWorldCrawler(),
-        # Add more crawlers here
-    ]
+    if commercial_mode:
+        logger.info("Using commercial solar crawlers")
+        return [
+            PVMagazineBusinessCrawler(),
+            SolarPowerWorldCommercialCrawler(),
+            # 可以添加更多商业爬虫
+        ]
+    else:
+        logger.info("Using general solar crawlers")
+        return [
+            PVMagazineCrawler(),
+            SolarPowerWorldCrawler(),
+            # Add more crawlers here
+        ]
 
 
 async def crawl_news(crawlers: List[BaseCrawler], db_manager: DatabaseManager):
@@ -44,26 +57,32 @@ async def crawl_news(crawlers: List[BaseCrawler], db_manager: DatabaseManager):
     all_articles = []
     for crawler in crawlers:
         try:
-            logger.info(f"Crawling {crawler.source_name}...")
+            logger.info(f"Crawling {crawler.source_display_name}...")
             articles = await crawler.crawl()
             all_articles.extend(articles)
-            logger.info(f"Found {len(articles)} articles from {crawler.source_name}")
+            logger.info(f"Found {len(articles)} articles from {crawler.source_display_name}")
         except Exception as e:
-            logger.error(f"Error crawling {crawler.source_name}: {e}")
+            logger.error(f"Error crawling {crawler.source_display_name}: {e}")
     
     return all_articles
 
 
-async def process_articles(articles: List[dict], db_manager: DatabaseManager):
+async def process_articles(articles: List[dict], db_manager: DatabaseManager, commercial_mode: bool = False):
     """Process and store crawled articles."""
     if not articles:
         logger.info("No articles to process")
         return
     
-    logger.info(f"Processing {len(articles)} articles...")
+    logger.info(f"Processing {len(articles)} articles (commercial mode: {commercial_mode})...")
     
-    # Initialize processors
-    cleaner = ArticleCleaner()
+    # Initialize processors based on mode
+    if commercial_mode:
+        cleaner = CommercialSolarCleaner()
+        logger.info("Using commercial solar cleaner")
+    else:
+        cleaner = ArticleCleaner()
+        logger.info("Using general solar cleaner")
+    
     classifier = ArticleClassifier()
     
     processed_count = 0
@@ -78,6 +97,12 @@ async def process_articles(articles: List[dict], db_manager: DatabaseManager):
             # Store in database
             await db_manager.save_article(classified)
             processed_count += 1
+            
+            # 如果是商业模式，进行额外验证
+            if commercial_mode:
+                validation = cleaner.validate_commercial_article(classified)
+                if not validation['valid']:
+                    logger.warning(f"Commercial article validation issues: {validation['issues']}")
             
         except Exception as e:
             logger.error(f"Error processing article {article.get('url', 'unknown')}: {e}")
@@ -108,6 +133,17 @@ async def main():
         action="store_true", 
         help="Initialize database"
     )
+    parser.add_argument(
+        "--commercial",
+        action="store_true",
+        help="Use commercial solar mode (focus on commercial/industrial solar)"
+    )
+    parser.add_argument(
+        "--source",
+        type=str,
+        default="all",
+        help="Specific source to crawl: pv_magazine, solar_power_world, commercial, or all"
+    )
     
     args = parser.parse_args()
     
@@ -121,14 +157,35 @@ async def main():
         return
     
     if args.crawl:
-        # Get crawlers
-        crawlers = get_crawlers()
+        # Get crawlers based on mode
+        commercial_mode = args.commercial
+        crawlers = get_crawlers(commercial_mode)
+        
+        # 如果指定了特定源，过滤爬虫
+        if args.source != "all":
+            filtered_crawlers = []
+            source_map = {
+                'pv_magazine': ['PVMagazineCrawler', 'PVMagazineBusinessCrawler'],
+                'solar_power_world': ['SolarPowerWorldCrawler', 'SolarPowerWorldCommercialCrawler'],
+                'commercial': ['PVMagazineBusinessCrawler', 'SolarPowerWorldCommercialCrawler'],
+            }
+            
+            target_classes = source_map.get(args.source.lower(), [])
+            for crawler in crawlers:
+                if crawler.__class__.__name__ in target_classes:
+                    filtered_crawlers.append(crawler)
+            
+            if filtered_crawlers:
+                crawlers = filtered_crawlers
+                logger.info(f"Filtered to {len(crawlers)} crawler(s) for source: {args.source}")
+            else:
+                logger.warning(f"No crawlers found for source: {args.source}, using all crawlers")
         
         # Crawl news
         articles = await crawl_news(crawlers, db_manager)
         
         # Process articles
-        await process_articles(articles, db_manager)
+        await process_articles(articles, db_manager, commercial_mode)
         
         logger.info("Crawling completed")
     

@@ -103,6 +103,31 @@ Planned news sources:
 - National Renewable Energy Laboratory (NREL) news
 - International Solar Energy Society (ISES) updates
 
+## Commercial & Industrial Solar Focus
+
+本项目专门提供了工商业光伏（C&I Solar）专项功能，专注于商业和工业光伏领域的新闻、政策和市场分析。
+
+### 工商业光伏专项功能
+- **专用爬虫**: PV Magazine Business, Solar Power World Commercial
+- **智能分析**: 商业模式识别、项目规模分类、地域分析
+- **关键词过滤**: 59个工商业光伏专项关键词
+- **分类系统**: 新闻/政策/市场三级分类
+
+### 快速开始（工商业光伏模式）
+```bash
+# 1. 安装依赖
+pip install -r requirements.txt
+
+# 2. 初始化数据库
+python scripts/init_db.py
+
+# 3. 运行工商业光伏爬虫
+python src/main.py --crawl --commercial --init-db
+```
+
+### 详细指南
+详见 [COMMERCIAL_GUIDE.md](COMMERCIAL_GUIDE.md) 获取完整使用说明和扩展指南。
+
 ## Development
 
 ### Running Tests
