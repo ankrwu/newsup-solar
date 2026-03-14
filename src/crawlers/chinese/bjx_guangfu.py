@@ -1,6 +1,6 @@
 """
 北极星太阳能光伏网爬虫
-支持 RSS 和网页爬取两种方式
+支持 RSS、静态爬取和 Playwright 动态渲染三种方式
 """
 
 import re
@@ -12,12 +12,13 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from ..base import BaseCrawler
+from ..dynamic_crawler import DynamicContentCrawler, PLAYWRIGHT_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
 
-class BjxGuangfuCrawler(BaseCrawler):
-    """北极星太阳能光伏网爬虫 - 支持 RSS 和网页爬取"""
+class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
+    """北极星太阳能光伏网爬虫 - 支持 RSS、静态和动态爬取"""
     
     # RSS 源配置
     RSS_FEEDS = [
@@ -26,6 +27,17 @@ class BjxGuangfuCrawler(BaseCrawler):
             'description': '北极星光伏网 RSS'
         },
     ]
+    
+    def __init__(self, use_playwright: bool = False):
+        """
+        初始化爬虫
+        
+        Args:
+            use_playwright: 是否使用 Playwright 进行动态渲染
+        """
+        BaseCrawler.__init__(self)
+        DynamicContentCrawler.__init__(self, headless=True)
+        self.use_playwright = use_playwright and PLAYWRIGHT_AVAILABLE
     
     @property
     def source_url(self) -> str:
@@ -36,7 +48,7 @@ class BjxGuangfuCrawler(BaseCrawler):
         return "北极星光伏网"
     
     async def fetch_article_urls(self) -> List[str]:
-        """获取文章URL列表 - 优先使用 RSS"""
+        """获取文章URL列表 - 优先级: RSS > 动态渲染 > 静态爬取"""
         article_urls = []
         
         # 方法1: 尝试 RSS 订阅
@@ -47,10 +59,21 @@ class BjxGuangfuCrawler(BaseCrawler):
                 logger.info(f"Found {len(rss_urls)} articles via RSS")
                 return rss_urls[:30]
         except Exception as e:
-            logger.warning(f"RSS fetch failed: {e}, falling back to web scraping")
+            logger.warning(f"RSS fetch failed: {e}, trying next method")
         
-        # 方法2: 回退到网页爬取
-        logger.info("Falling back to web scraping...")
+        # 方法2: 尝试 Playwright 动态渲染
+        if self.use_playwright and self.is_available:
+            try:
+                logger.info("Trying Playwright for dynamic content...")
+                dynamic_urls = await self._fetch_with_playwright()
+                if dynamic_urls:
+                    logger.info(f"Found {len(dynamic_urls)} articles via Playwright")
+                    return dynamic_urls[:30]
+            except Exception as e:
+                logger.warning(f"Playwright fetch failed: {e}, falling back to static")
+        
+        # 方法3: 静态网页爬取
+        logger.info("Falling back to static web scraping...")
         session = await self.get_session()
         
         list_urls = [
@@ -115,6 +138,45 @@ class BjxGuangfuCrawler(BaseCrawler):
                 logger.error(f"Error fetching RSS {feed_info['url']}: {e}")
         
         return list(set(all_urls))
+    
+    async def _fetch_with_playwright(self) -> List[str]:
+        """使用 Playwright 动态渲染获取文章链接"""
+        article_urls = []
+        
+        list_urls = [
+            f"{self.source_url}/news/",
+            f"{self.source_url}/hyyw/",
+        ]
+        
+        for list_url in list_urls:
+            try:
+                # 使用 Playwright 获取动态渲染后的页面
+                html = await self.scroll_page(list_url, scroll_times=2, wait_time=1000)
+                if html:
+                    soup = BeautifulSoup(html, 'lxml')
+                    
+                    link_selectors = [
+                        '.list li a',
+                        '.news-list a',
+                        'ul.list a',
+                        '.article-list a',
+                        'a[href*=".shtml"]',
+                    ]
+                    
+                    for selector in link_selectors:
+                        for link in soup.select(selector):
+                            href = link.get('href', '')
+                            if href and self._is_article_url(href):
+                                full_url = href if href.startswith('http') else f"{self.source_url}{href}"
+                                if full_url not in article_urls:
+                                    article_urls.append(full_url)
+                
+                await asyncio.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Error with Playwright on {list_url}: {e}")
+        
+        return article_urls
     
     def _parse_rss_xml(self, xml_content: str) -> List[str]:
         """解析 RSS XML 内容"""

@@ -36,7 +36,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_crawlers(commercial_mode: bool = False, chinese_mode: bool = False) -> List[BaseCrawler]:
+def get_crawlers(commercial_mode: bool = False, chinese_mode: bool = False, 
+                 use_playwright: bool = False) -> List[BaseCrawler]:
     """Initialize and return configured crawlers."""
     crawlers = []
     
@@ -44,7 +45,7 @@ def get_crawlers(commercial_mode: bool = False, chinese_mode: bool = False) -> L
         logger.info("Using Chinese solar crawlers")
         crawlers = [
             PVMagazineChinaCrawler(),
-            BjxGuangfuCrawler(),
+            BjxGuangfuCrawler(use_playwright=use_playwright),
         ]
     elif commercial_mode:
         logger.info("Using commercial solar crawlers")
@@ -58,6 +59,9 @@ def get_crawlers(commercial_mode: bool = False, chinese_mode: bool = False) -> L
             PVMagazineCrawler(),
             SolarPowerWorldCrawler(),
         ]
+    
+    if use_playwright:
+        logger.info("Playwright mode enabled for dynamic content")
     
     return crawlers
 
@@ -182,6 +186,11 @@ async def main():
         help="Disable smart processing (LLM summaries, AI classification)"
     )
     parser.add_argument(
+        "--playwright",
+        action="store_true",
+        help="Use Playwright for dynamic content rendering (slower but more reliable)"
+    )
+    parser.add_argument(
         "--source",
         type=str,
         default="all",
@@ -204,9 +213,10 @@ async def main():
         commercial_mode = args.commercial
         chinese_mode = args.chinese
         use_smart = not args.no_smart
+        use_playwright = args.playwright
         
         # Get crawlers based on mode
-        crawlers = get_crawlers(commercial_mode, chinese_mode)
+        crawlers = get_crawlers(commercial_mode, chinese_mode, use_playwright)
         
         # 如果指定了特定源，过滤爬虫
         if args.source != "all":
