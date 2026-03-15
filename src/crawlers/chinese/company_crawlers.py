@@ -10,9 +10,58 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from bs4 import BeautifulSoup
 
+try:
+    import chardet
+    CHARDET_AVAILABLE = True
+except ImportError:
+    CHARDET_AVAILABLE = False
+
 from ..base import BaseCrawler
 
 logger = logging.getLogger(__name__)
+
+
+async def _decode_response(response) -> str:
+    """正确解码响应内容，处理各种编码"""
+    try:
+        content = await response.read()
+        
+        # 从 Content-Type 头获取编码
+        content_type = response.headers.get('Content-Type', '')
+        if 'charset=' in content_type:
+            charset = content_type.split('charset=')[-1].strip()
+            try:
+                return content.decode(charset)
+            except (UnicodeDecodeError, LookupError):
+                pass
+        
+        # 使用 chardet 自动检测编码
+        if CHARDET_AVAILABLE:
+            detected = chardet.detect(content)
+            encoding = detected.get('encoding', 'utf-8')
+            confidence = detected.get('confidence', 0)
+            
+            if encoding and confidence > 0.7:
+                try:
+                    decoded = content.decode(encoding)
+                    logger.debug(f"chardet 检测编码: {encoding} (置信度: {confidence:.2f})")
+                    return decoded
+                except (UnicodeDecodeError, LookupError):
+                    pass
+        
+        # 尝试常见编码
+        for encoding in ['utf-8', 'gbk', 'gb2312', 'gb18030']:
+            try:
+                return content.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        
+        # 最后尝试忽略错误
+        return content.decode('utf-8', errors='ignore')
+        
+    except Exception as e:
+        logger.error(f"解码响应出错: {e}")
+        return ""
 
 
 class LongiCrawler(BaseCrawler):
