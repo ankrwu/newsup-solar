@@ -1,7 +1,7 @@
 """
-中国能源报 (www.cnenergy.org) 爬虫
-中国能源报社官方媒体，权威政策报道，涵盖能源政策、电力、新能源
-支持 Playwright 动态渲染绕过 SSL 问题
+中国能源报 (paper.people.com.cn/zgnyb/) 爬虫
+人民日报社主管的能源行业权威媒体
+使用 Playwright 动态渲染绕过访问限制
 """
 
 import re
@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
-    """中国能源报爬虫 - 中国能源报社官方媒体"""
+    """中国能源报爬虫 - 人民日报社主管能源媒体"""
     
     def __init__(self, use_playwright: bool = True):
         """
         初始化爬虫
         
         Args:
-            use_playwright: 是否使用 Playwright 动态渲染（默认开启以绕过 SSL 问题）
+            use_playwright: 是否使用 Playwright 动态渲染（默认开启）
         """
         BaseCrawler.__init__(self)
         DynamicContentCrawler.__init__(self, headless=True, ignore_ssl=True)
@@ -33,109 +33,68 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
     
     @property
     def source_url(self) -> str:
-        return "https://www.cnenergy.org"
+        return "https://paper.people.com.cn/zgnyb"
     
     @property
     def source_display_name(self) -> str:
         return "中国能源报"
     
     async def fetch_article_urls(self) -> List[str]:
-        """获取文章URL列表 - 使用 Playwright 绕过 SSL 问题"""
+        """获取文章URL列表 - 使用 Playwright 绕过访问限制"""
         article_urls = []
         
-        # 尝试 Playwright 动态渲染（支持 SSL 绕过）
         if self.use_playwright and PLAYWRIGHT_AVAILABLE:
-            logger.info("使用 Playwright 获取文章链接（SSL 绕过模式）...")
+            logger.info("使用 Playwright 获取中国能源报文章...")
             article_urls = await self._fetch_with_playwright()
             if article_urls:
                 logger.info(f"通过 Playwright 找到 {len(article_urls)} 篇文章")
                 return article_urls[:30]
         else:
-            # 回退到静态爬取
-            logger.info("尝试静态网页爬取...")
-            article_urls = await self._fetch_static()
+            logger.warning("中国能源报需要 Playwright 支持，请安装 playwright")
         
-        logger.info(f"从中国能源报总共找到 {len(article_urls)} 篇文章")
-        return list(set(article_urls))[:30]
+        return article_urls
     
     async def _fetch_with_playwright(self) -> List[str]:
         """使用 Playwright 动态渲染获取文章链接"""
         article_urls = []
         
+        # 人民网报纸电子版页面结构
         category_urls = [
-            f"{self.source_url}/",
-            f"{self.source_url}/news/",
-            f"{self.source_url}/fd/",  # 发电
-            f"{self.source_url}/gd/",  # 光电
-            f"{self.source_url}/xny/",  # 新能源
-            f"{self.source_url}/zs/",  # 储能
+            f"{self.source_url}/pc/layout/index.html",  # 首页
+            f"{self.source_url}/pc/content/2026-03/15/content_1.html",  # 当期报纸
         ]
         
         for category_url in category_urls:
             try:
                 logger.info(f"Playwright 获取: {category_url}")
-                html = await self.scroll_page(category_url, scroll_times=2, wait_time=2000)
+                html = await self.scroll_page(category_url, scroll_times=2, wait_time=3000)
                 
                 if html:
                     soup = BeautifulSoup(html, 'lxml')
                     
+                    # 人民网报纸页面的文章链接选择器
                     article_selectors = [
+                        'a[href*="content"]',
                         '.news-list a',
                         '.article-list a',
-                        '.list-item a',
-                        '.item a',
+                        '.list a',
                         'a[href*=".html"]',
-                        'h2 a',
-                        'h3 a',
-                        '.title a',
+                        '.paper-list a',
+                        '.page-list a',
                     ]
                     
                     for selector in article_selectors:
                         for link in soup.select(selector):
                             href = link.get('href', '')
-                            if href and self._is_article_url(href):
-                                full_url = self._normalize_url(href)
-                                if full_url and full_url not in article_urls:
+                            if href:
+                                full_url = self._normalize_url(href, category_url)
+                                if full_url and self._is_article_url(full_url) and full_url not in article_urls:
                                     article_urls.append(full_url)
                 
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
                 
             except Exception as e:
                 logger.error(f"Playwright 获取 {category_url} 时出错: {e}")
-        
-        return article_urls
-    
-    async def _fetch_static(self) -> List[str]:
-        """静态网页爬取（备用方案）"""
-        article_urls = []
-        session = await self.get_session()
-        
-        category_urls = [
-            f"{self.source_url}/",
-            f"{self.source_url}/news/",
-        ]
-        
-        for category_url in category_urls:
-            try:
-                logger.info(f"静态获取: {category_url}")
-                await asyncio.sleep(1)
-                
-                async with session.get(category_url) as response:
-                    if response.status == 200:
-                        html = await response.text()
-                        soup = BeautifulSoup(html, 'lxml')
-                        
-                        for link in soup.select('a[href*=".html"]'):
-                            href = link.get('href', '')
-                            if href and self._is_article_url(href):
-                                full_url = self._normalize_url(href)
-                                if full_url and full_url not in article_urls:
-                                    article_urls.append(full_url)
-                    else:
-                        logger.warning(f"获取 {category_url} 失败: {response.status}")
-            
-            except Exception as e:
-                logger.error(f"处理 {category_url} 时出错: {e}")
         
         return article_urls
     
@@ -143,7 +102,7 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
         """判断是否为文章URL"""
         excluded = [
             r'/list',
-            r'/index',
+            r'/index$',
             r'/search',
             r'#',
             r'\.pdf$',
@@ -152,9 +111,7 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
             r'javascript:',
             r'mailto:',
             r'/tag/',
-            r'/category/',
-            r'/author/',
-            r'/page/',
+            r'/page/\d+$',
         ]
         
         for pattern in excluded:
@@ -162,14 +119,9 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
                 return False
         
         article_patterns = [
+            r'/content/\d{4}-\d{2}/',
+            r'/content_\d+\.html',
             r'\.html$',
-            r'/\d{4}/\d{2}/\d{2}/',
-            r'/\d{8}/',
-            r'/news/\d+',
-            r'/fd/\d+',
-            r'/gd/\d+',
-            r'/xny/\d+',
-            r'/zs/\d+',
         ]
         
         for pattern in article_patterns:
@@ -178,10 +130,29 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
         
         return False
     
-    def _normalize_url(self, href: str) -> str:
+    def _normalize_url(self, href: str, base_url: str = "") -> str:
         """规范化URL"""
         if not href:
             return ""
+        
+        # 处理相对路径 ../../../content/ 这种格式
+        if href.startswith('../'):
+            # 解析相对路径
+            parts = href.split('/')
+            up_count = sum(1 for p in parts if p == '..')
+            actual_path = '/'.join(p for p in parts if p != '..')
+            
+            # 从 base_url 向上回溯
+            if base_url:
+                base_parts = base_url.split('/')
+                # 移除最后的文件名
+                base_parts = base_parts[:-1]
+                # 向上回溯
+                for _ in range(up_count):
+                    if base_parts:
+                        base_parts.pop()
+                return '/'.join(base_parts) + '/' + actual_path
+            return f"https://paper.people.com.cn/{actual_path}"
         
         if href.startswith('http://') or href.startswith('https://'):
             return href
@@ -190,7 +161,12 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
             return f'https:{href}'
         
         if href.startswith('/'):
-            return f"{self.source_url}{href}"
+            return f"https://paper.people.com.cn{href}"
+        
+        # 相对路径，使用基础URL
+        if base_url:
+            base = base_url.rsplit('/', 1)[0]
+            return f"{base}/{href}"
         
         return f"{self.source_url}/{href}"
     
@@ -198,23 +174,12 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
         """解析文章内容"""
         html = None
         
-        # 优先使用 Playwright 解析（支持 SSL 绕过）
+        # 使用 Playwright 解析
         if self.use_playwright and PLAYWRIGHT_AVAILABLE:
             try:
-                html = await self.fetch_page(url, wait_time=2000)
+                html = await self.fetch_page(url, wait_time=3000)
             except Exception as e:
                 logger.warning(f"Playwright 解析 {url} 失败: {e}")
-        
-        # 回退到静态解析
-        if not html:
-            session = await self.get_session()
-            try:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        html = await response.text()
-            except Exception as e:
-                logger.error(f"获取文章 {url} 失败: {e}")
-                return None
         
         if not html:
             return None
@@ -258,14 +223,14 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
     
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """提取标题"""
-        selectors = ['h1', '.article-title', '.news-title', '.title', 'title']
+        selectors = ['h1', '.article-title', '.news-title', '.title', '#title', 'title']
         
         for selector in selectors:
             elem = soup.select_one(selector)
             if elem:
                 title = elem.get_text(strip=True)
                 title = re.sub(r'[-_]\s*中国能源报.*$', '', title)
-                title = re.sub(r'[-_]\s*cnenergy.*$', '', title, flags=re.IGNORECASE)
+                title = re.sub(r'[-_]\s*人民网.*$', '', title)
                 return title
         
         return "未知标题"
@@ -273,12 +238,12 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
     def _extract_content(self, soup: BeautifulSoup) -> str:
         """提取正文内容"""
         content_selectors = [
+            '#content_body',
             '.article-content',
             '.news-content',
             '.content',
             '.article-body',
-            '.detail-content',
-            '.TRS_Editor',
+            '#ozoom',
             'article',
         ]
         
@@ -293,10 +258,9 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
                     content = ' '.join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
                     content = re.sub(r'责任编辑.*$', '', content)
                     content = re.sub(r'来源.*$', '', content)
-                    content = re.sub(r'版权声明.*$', '', content, flags=re.IGNORECASE)
                     
                     if len(content) > 100:
-                        return content
+                        return content[:5000]
         
         paragraphs = soup.find_all('p')
         content = ' '.join([p.get_text(strip=True) for p in paragraphs[:20] if p.get_text(strip=True)])
@@ -304,7 +268,7 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
     
     def _extract_author(self, soup: BeautifulSoup) -> str:
         """提取作者/来源"""
-        selectors = ['.author', '.source', '.article-info span', '.info span', '.editor']
+        selectors = ['.author', '.source', '.article-info span', '.editor']
         
         for selector in selectors:
             elem = soup.select_one(selector)
@@ -320,15 +284,15 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
                 
                 return text
         
-        return ""
+        return "中国能源报"
     
     def _extract_date(self, soup: BeautifulSoup) -> str:
         """提取发布日期"""
         text = soup.get_text()
         date_patterns = [
-            r'发布时间[：:]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?\s*\d{1,2}[:时]\d{1,2})',
-            r'(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)',
-            r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})',
+            r'(\d{4}年\d{1,2}月\d{1,2}日)',
+            r'(\d{4}-\d{2}-\d{2})',
+            r'(\d{4}/\d{2}/\d{2})',
         ]
         
         for pattern in date_patterns:
@@ -343,11 +307,6 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
         meta_desc = soup.find('meta', attrs={'name': 'description'})
         if meta_desc and meta_desc.get('content'):
             return meta_desc['content']
-        
-        og_desc = soup.find('meta', attrs={'property': 'og:description'})
-        if og_desc and og_desc.get('content'):
-            return og_desc['content']
-        
         return ""
     
     def _extract_keywords(self, soup: BeautifulSoup) -> List[str]:
@@ -357,11 +316,5 @@ class ChinaEnergyNewsCrawler(BaseCrawler, DynamicContentCrawler):
         meta_keywords = soup.find('meta', attrs={'name': 'keywords'})
         if meta_keywords and meta_keywords.get('content'):
             keywords = [k.strip() for k in meta_keywords['content'].split(',') if k.strip()]
-        
-        tag_elements = soup.select('.tags a, .article-tags a, [rel="tag"]')
-        for elem in tag_elements:
-            tag_text = elem.get_text(strip=True)
-            if tag_text and tag_text not in keywords:
-                keywords.append(tag_text)
         
         return keywords[:10]
