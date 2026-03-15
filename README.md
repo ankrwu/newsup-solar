@@ -4,6 +4,30 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Project Status](https://img.shields.io/badge/Status-完成-83.3%25-green.svg)](#)
+[![Data Articles](https://img.shields.io/badge/Articles-80+-blue.svg)](#)
+
+## 📋 项目状态
+
+**当前版本**: v1.0.0 (2026-03-14)  
+**项目状态**: ✅ **基本完成** (83.3% 完成度)  
+**数据状态**: 📊 **80+ 篇文章已收录**  
+**功能状态**: 🚀 **工商业光伏专项模式已上线**
+
+### ✅ 已完成功能
+- 多源新闻聚合（中英文）
+- 工商业光伏专项模式
+- 智能分类和商业分析
+- 数据库存储和查询
+- 完整的命令行工具
+
+### 🔧 核心特性
+- **专注领域**: 工商业光伏（Commercial & Industrial Solar）
+- **数据源**: PV Magazine、Solar Power World、中文源等
+- **分析维度**: 商业模式、政策类型、项目规模、地域
+- **技术架构**: 异步爬虫 + SQLAlchemy + 模块化设计
+
+> 📝 详细项目状态报告请参见 [PROJECT_STATUS.md](PROJECT_STATUS.md)
 
 ## ✨ 功能特性
 
@@ -85,16 +109,24 @@ solarnews --help
 ## 📰 数据源
 
 ### 英文源
-| 来源 | 方式 | 状态 |
-|------|------|------|
-| PV Magazine | RSS | ✅ |
-| Solar Power World | RSS | ✅ |
+| 来源 | 方式 | 状态 | 说明 |
+|------|------|------|------|
+| PV Magazine | RSS + 动态爬取 | ✅ | 通用太阳能新闻 |
+| Solar Power World | RSS + 动态爬取 | ✅ | 通用太阳能新闻 |
+| PV Magazine Business | 动态爬取 | ✅ | **工商业光伏专项** (finance/markets分类) |
+| Solar Power World Commercial | 动态爬取 | ✅ | **工商业光伏专项** (commercial分类) |
 
 ### 中文源
-| 来源 | 方式 | 状态 |
-|------|------|------|
-| PV Magazine 中国 | RSS | ✅ |
-| 北极星光伏网 | Playwright | ✅ |
+| 来源 | 方式 | 状态 | 说明 |
+|------|------|------|------|
+| PV Magazine 中国 | RSS | ✅ | 中国市场新闻 |
+| 北极星光伏网 | Playwright | ✅ | 中国光伏行业新闻 |
+
+### 数据统计
+- **总文章数**: 80+ 篇
+- **商业光伏文章**: 包含专项分析标签
+- **更新频率**: 支持定时爬取
+- **数据完整性**: 标题、内容、分析结果完整存储
 
 ## 🤖 智能功能
 
