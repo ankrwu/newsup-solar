@@ -41,6 +41,7 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
     
     @property
     def source_url(self) -> str:
+        # 文章实际所在的域名
         return "https://guangfu.bjx.com.cn"
     
     @property
@@ -51,23 +52,26 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
         """获取文章URL列表 - 优先级: RSS > 静态爬取 > Playwright降级"""
         article_urls = []
         
-        # 方法1: 尝试 RSS 订阅
-        try:
-            logger.info("Trying RSS feeds for 北极星光伏网...")
-            rss_urls = await self._fetch_from_rss()
-            if rss_urls:
-                logger.info(f"Found {len(rss_urls)} articles via RSS")
-                return rss_urls[:30]
-        except Exception as e:
-            logger.warning(f"RSS fetch failed: {e}, trying next method")
+        # 方法1: 尝试 RSS 订阅（由于WAF验证，暂时禁用）
+        # try:
+        #     logger.info("Trying RSS feeds for 北极星光伏网...")
+        #     rss_urls = await self._fetch_from_rss()
+        #     if rss_urls:
+        #         logger.info(f"Found {len(rss_urls)} articles via RSS")
+        #         return rss_urls[:30]
+        # except Exception as e:
+        #     logger.warning(f"RSS fetch failed: {e}, trying next method")
         
         # 方法2: 静态网页爬取（先尝试，因为更快）
         logger.info("Trying static web scraping...")
         session = await self.get_session()
         
+        # 北极星光伏网的有效列表页（基于实际测试）
         list_urls = [
-            f"{self.source_url}/news/",
-            f"{self.source_url}/hyyw/",
+            f"{self.source_url}",  # 首页通常包含最新文章
+            "https://guangfu.bjx.com.cn/",  # 子域名首页作为备用
+            "https://www.bjx.com.cn/guangfu/news/",  # 新闻列表页
+            "https://guangfu.bjx.com.cn/news/",  # 子域名新闻页
         ]
         
         for list_url in list_urls:
@@ -92,8 +96,8 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
                             for link in soup.select(selector):
                                 href = link.get('href', '')
                                 if href and self._is_article_url(href):
-                                    full_url = href if href.startswith('http') else f"{self.source_url}{href}"
-                                    if full_url not in article_urls:
+                                    full_url = self._normalize_url(href)
+                                    if full_url and full_url not in article_urls:
                                         article_urls.append(full_url)
                     else:
                         logger.warning(f"Failed to fetch {list_url}: {response.status}")
@@ -150,9 +154,12 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
         """使用 Playwright 动态渲染获取文章链接"""
         article_urls = []
         
+        # 使用Playwright时，可以尝试更多URL
         list_urls = [
-            f"{self.source_url}/news/",
-            f"{self.source_url}/hyyw/",
+            "https://guangfu.bjx.com.cn/",  # 子域名首页
+            "https://www.bjx.com.cn/guangfu/",  # 主站路径
+            "https://guangfu.bjx.com.cn/news/",  # 子域名新闻页
+            "https://www.bjx.com.cn/guangfu/news/",  # 主站新闻页
         ]
         
         for list_url in list_urls:
@@ -174,8 +181,8 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
                         for link in soup.select(selector):
                             href = link.get('href', '')
                             if href and self._is_article_url(href):
-                                full_url = href if href.startswith('http') else f"{self.source_url}{href}"
-                                if full_url not in article_urls:
+                                full_url = self._normalize_url(href)
+                                if full_url and full_url not in article_urls:
                                     article_urls.append(full_url)
                 
                 await asyncio.sleep(1)
@@ -212,18 +219,58 @@ class BjxGuangfuCrawler(BaseCrawler, DynamicContentCrawler):
             r'\.pdf$',
             r'javascript:',
             r'/rss',
+            r'/tag/',
+            r'/category/',
+            r'/author/',
         ]
         
         for pattern in excluded:
             if re.search(pattern, url, re.IGNORECASE):
                 return False
         
-        if re.search(r'\.shtml$', url):
-            return True
-        if re.search(r'/news/\d+', url):
-            return True
+        # 文章URL特征
+        article_patterns = [
+            r'\.shtml$',
+            r'/news/\d+',
+            r'/html/\d+',
+            r'/\d{8}/',  # 包含8位数字日期
+            r'/\d{4}/\d{2}/\d{2}/',  # 日期路径
+        ]
+        
+        for pattern in article_patterns:
+            if re.search(pattern, url):
+                return True
         
         return False
+    
+    def _normalize_url(self, href: str) -> str:
+        """规范化URL，确保是完整的绝对URL"""
+        if not href:
+            return ""
+        
+        # 如果已经是完整URL，直接返回
+        if href.startswith('http://') or href.startswith('https://'):
+            return href
+        
+        # 处理协议相对URL（//开头）
+        if href.startswith('//'):
+            return f'https:{href}'
+        
+        # 处理绝对路径（/开头）
+        if href.startswith('/'):
+            # 判断是否应该使用guangfu子域名
+            if '/news/' in href or '/html/' in href or '.shtml' in href:
+                # 文章通常位于guangfu.bjx.com.cn或news.bjx.com.cn
+                if href.startswith('/html/'):
+                    return f'https://news.bjx.com.cn{href}'
+                else:
+                    return f'https://guangfu.bjx.com.cn{href}'
+            else:
+                # 其他路径使用主站
+                return f'https://www.bjx.com.cn{href}'
+        
+        # 相对路径，添加基础URL
+        return f'https://guangfu.bjx.com.cn/{href}'
     
     async def parse_article(self, url: str) -> Optional[Dict[str, Any]]:
         """解析文章内容"""

@@ -29,16 +29,18 @@ class DynamicContentCrawler:
     使用 Playwright 渲染 JavaScript 页面
     """
     
-    def __init__(self, headless: bool = True, timeout: int = 30000):
+    def __init__(self, headless: bool = True, timeout: int = 30000, ignore_ssl: bool = False):
         """
         初始化动态爬虫
         
         Args:
             headless: 是否无头模式运行浏览器
             timeout: 页面加载超时时间（毫秒）
+            ignore_ssl: 是否忽略 SSL 证书验证
         """
         self.headless = headless
         self.timeout = timeout
+        self.ignore_ssl = ignore_ssl
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._playwright = None
@@ -70,11 +72,17 @@ class DynamicContentCrawler:
             )
             
             # 创建浏览器上下文，设置用户代理
-            self._context = await self._browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                viewport={'width': 1920, 'height': 1080},
-                locale='zh-CN',
-            )
+            context_options = {
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'viewport': {'width': 1920, 'height': 1080},
+                'locale': 'zh-CN',
+            }
+            
+            # 如果需要忽略 SSL 证书验证
+            if self.ignore_ssl:
+                context_options['ignore_https_errors'] = True
+            
+            self._context = await self._browser.new_context(**context_options)
             
             logger.info("Playwright browser initialized successfully")
             return True

@@ -18,6 +18,16 @@ from src.crawlers.commercial.pv_magazine_business import PVMagazineBusinessCrawl
 from src.crawlers.commercial.solar_power_world_commercial import SolarPowerWorldCommercialCrawler
 from src.crawlers.chinese.pv_magazine_china import PVMagazineChinaCrawler
 from src.crawlers.chinese.bjx_guangfu import BjxGuangfuCrawler
+from src.crawlers.chinese.solarbe_crawler import SolarBECrawler
+from src.crawlers.chinese.nengyuan_zazhi import NengYuanZaZhiCrawler
+from src.crawlers.chinese.china_energy_news import ChinaEnergyNewsCrawler
+from src.crawlers.chinese.solarzoom import SolarZoomCrawler
+from src.crawlers.chinese.in_en_crawler import InEnCrawler
+from src.crawlers.chinese.ofweek_solar import OfweekSolarCrawler
+from src.crawlers.chinese.china_pv import ChinaPVCrawler
+from src.crawlers.chinese.nea_crawler import NEACrawler
+from src.crawlers.chinese.ditan_crawler import DiTanCrawler
+from src.crawlers.chinese.company_crawlers import LongiCrawler, JASolarCrawler, TrinaSolarCrawler
 from src.storage.database import DatabaseManager
 from src.processors.cleaner import ArticleCleaner
 from src.processors.commercial_cleaner import CommercialSolarCleaner
@@ -62,8 +72,24 @@ def get_crawlers(commercial_mode: bool = False, chinese_only: bool = False,
     elif chinese_only:
         logger.info("Using Chinese solar crawlers only")
         crawlers = [
+            # 行业门户
             PVMagazineChinaCrawler(),
             BjxGuangfuCrawler(use_playwright=use_playwright),
+            SolarBECrawler(),
+            InEnCrawler(),
+            OfweekSolarCrawler(),
+            # 官方机构
+            NEACrawler(),
+            DiTanCrawler(),
+            ChinaPVCrawler(),
+            # 企业官网
+            LongiCrawler(),
+            JASolarCrawler(),
+            TrinaSolarCrawler(),
+            # 可能不可用的源（保留以便监控）
+            NengYuanZaZhiCrawler(),
+            ChinaEnergyNewsCrawler(),
+            SolarZoomCrawler(),
         ]
     # 只爬取英文源
     elif english_only:
@@ -79,9 +105,20 @@ def get_crawlers(commercial_mode: bool = False, chinese_only: bool = False,
             # 英文源
             PVMagazineCrawler(use_playwright=use_playwright),
             SolarPowerWorldCrawler(use_playwright=use_playwright),
-            # 中文源
+            # 中文行业门户
             PVMagazineChinaCrawler(),
             BjxGuangfuCrawler(use_playwright=use_playwright),
+            SolarBECrawler(),
+            InEnCrawler(),
+            OfweekSolarCrawler(),
+            # 官方机构
+            NEACrawler(),
+            DiTanCrawler(),
+            ChinaPVCrawler(),
+            # 企业官网
+            LongiCrawler(),
+            JASolarCrawler(),
+            TrinaSolarCrawler(),
         ]
     
     if use_playwright:
@@ -255,9 +292,20 @@ async def main():
                 'pv_magazine': ['PVMagazineCrawler', 'PVMagazineBusinessCrawler'],
                 'solar_power_world': ['SolarPowerWorldCrawler', 'SolarPowerWorldCommercialCrawler'],
                 'commercial': ['PVMagazineBusinessCrawler', 'SolarPowerWorldCommercialCrawler'],
-                'chinese': ['PVMagazineChinaCrawler', 'BjxGuangfuCrawler'],
+                'chinese': ['PVMagazineChinaCrawler', 'BjxGuangfuCrawler', 'SolarBECrawler', 
+                           'InEnCrawler', 'OfweekSolarCrawler', 'ChinaPVCrawler',
+                           'NEACrawler', 'DiTanCrawler', 'LongiCrawler', 'JASolarCrawler', 'TrinaSolarCrawler'],
                 'pv_magazine_china': ['PVMagazineChinaCrawler'],
                 'bjx': ['BjxGuangfuCrawler'],
+                'solarbe': ['SolarBECrawler'],
+                'in_en': ['InEnCrawler'],
+                'ofweek': ['OfweekSolarCrawler'],
+                'china_pv': ['ChinaPVCrawler'],
+                'nea': ['NEACrawler'],
+                'ditan': ['DiTanCrawler'],
+                'longi': ['LongiCrawler'],
+                'jasolar': ['JASolarCrawler'],
+                'trina': ['TrinaSolarCrawler'],
             }
             
             target_classes = source_map.get(args.source.lower(), [])
