@@ -1,5 +1,5 @@
 """
-能源杂志 (energy.magchina.com) 爬虫
+能源杂志 (www.inengyuan.com) 爬虫
 能源行业权威媒体，涵盖光伏、储能、新能源等领域
 支持 Playwright 动态渲染绕过 SSL 问题
 """

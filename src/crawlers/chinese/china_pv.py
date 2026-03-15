@@ -1,5 +1,5 @@
 """
-中国光伏行业协会 (www.chinapv.org) 爬虫
+中国光伏行业协会 (www.chinapv.org.cn) 爬虫
 中国光伏行业协会官方媒体，行业政策、市场数据权威发布
 支持静态网页爬取
 """
@@ -21,7 +21,7 @@ class ChinaPVCrawler(BaseCrawler):
     
     @property
     def source_url(self) -> str:
-        return "http://www.chinapv.org"
+        return "https://www.chinapv.org.cn"
     
     @property
     def source_display_name(self) -> str:
@@ -34,7 +34,7 @@ class ChinaPVCrawler(BaseCrawler):
         
         # 协会网站的主要栏目
         category_urls = [
-            f"{self.source_url}/",
+            f"{self.source_url}/index.html",
             f"{self.source_url}/news/",  # 新闻
             f"{self.source_url}/policy/",  # 政策
             f"{self.source_url}/industry/",  # 产业
